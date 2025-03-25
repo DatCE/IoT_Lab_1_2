@@ -8,6 +8,7 @@
 #include "DHT20.h"
 #include "Wire.h"
 #include <ArduinoOTA.h>
+#include "cooperative_scheduler_O(1).h"
 
 constexpr char WIFI_SSID[] = "Duc Dat";
 constexpr char WIFI_PASSWORD[] = "03012013";
@@ -23,6 +24,15 @@ constexpr uint32_t SERIAL_DEBUG_BAUD = 115200U;
 constexpr char BLINKING_INTERVAL_ATTR[] = "blinkingInterval";
 constexpr char LED_MODE_ATTR[] = "ledMode";
 constexpr char LED_STATE_ATTR[] = "ledState";
+constexpr char LED_ON_TIME_ATTR[] = "led_on_time";
+constexpr char LED_OFF_TIME_ATTR[] = "led_off_time";
+
+
+// test parameter no hardware
+float temperature = 20;
+float humidity = 50;
+
+// 
 
 volatile bool attributesChanged = false;
 volatile int ledMode = 0;
@@ -32,14 +42,17 @@ constexpr uint16_t BLINKING_INTERVAL_MS_MIN = 10U;
 constexpr uint16_t BLINKING_INTERVAL_MS_MAX = 60000U;
 volatile uint16_t blinkingInterval = 1000U;
 
+
 uint32_t previousStateChange;
 
 constexpr int16_t telemetrySendInterval = 10000U;
 uint32_t previousDataSend;
 
-constexpr std::array<const char *, 2U> SHARED_ATTRIBUTES_LIST = {
+constexpr std::array<const char *, 4U> SHARED_ATTRIBUTES_LIST = {
   LED_STATE_ATTR,
-  BLINKING_INTERVAL_ATTR
+  BLINKING_INTERVAL_ATTR,
+  LED_ON_TIME_ATTR,
+  LED_OFF_TIME_ATTR
 };
 
 WiFiClient wifiClient;
@@ -76,6 +89,12 @@ void processSharedAttributes(const Shared_Attribute_Data &data) {
       digitalWrite(LED_PIN, ledState);
       Serial.print("LED state is set to: ");
       Serial.println(ledState);
+    } else if (strcmp(it->key().c_str(), LED_ON_TIME_ATTR) == 0) {
+      Serial.print("LED_ON_TIME_ATTR: ");
+      Serial.println(it->value().as<uint16_t>());
+    } else if (strcmp(it->key().c_str(), LED_OFF_TIME_ATTR) == 0) {
+      Serial.print("LED_OFF_TIME_ATTR: ");
+      Serial.println(it->value().as<uint16_t>());
     }
   }
   attributesChanged = true;
@@ -160,10 +179,14 @@ void TaskSendTelemetry(void *pvParameters)
 {
   for (;;)
   {
-    dht20.read();
+    // dht20.read();
     
-    float temperature = dht20.getTemperature();
-    float humidity = dht20.getHumidity();
+    // float temperature = dht20.getTemperature();
+    // float humidity = dht20.getHumidity();
+
+    temperature++;
+    humidity++;
+
   
     if (isnan(temperature) || isnan(humidity)) {
       Serial.println("Failed to read from DHT20 sensor!");
@@ -177,7 +200,7 @@ void TaskSendTelemetry(void *pvParameters)
       tb.sendTelemetryData("temperature", temperature);
       tb.sendTelemetryData("humidity", humidity);
     }
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
+    vTaskDelay(2000 / portTICK_PERIOD_MS);
   }
 }
 
@@ -226,99 +249,3 @@ void loop() {
     
 }
 
-// #include <Arduino.h>
-// #include <Wire.h>
-// #include "DHT20.h"
-
-// // Task handles
-// TaskHandle_t Task1Handle = NULL;
-// TaskHandle_t Task2Handle = NULL;
-// TaskHandle_t Task3Handle = NULL;
-
-// // DHT20 Sensor
-// DHT20 DHT;
-
-// void Task1(void *pvParameters) {
-//     while (1) {
-//         Serial.println("Hello from Task1");
-//         vTaskDelay(1000);  // Delay 1000ms
-//     }
-// }
-
-// void Task2(void *pvParameters) {
-//     while (1) {
-//         Serial.println("Hello from Task2");
-//         vTaskDelay(1500);  // Delay 1500ms
-//     }
-// }
-
-// // Task 3: Read DHT20 Temperature & Humidity
-// void Task3(void *pvParameters) {
-//     while (1) {
-//         if (millis() - DHT.lastRead() >= 2000) {
-//             int status = DHT.read();
-
-//             Serial.print("DHT20 Temperature: ");
-//             Serial.print(DHT.getTemperature(), 1);
-//             Serial.println(" °C");
-
-//             Serial.print("DHT20 Humidity: ");
-//             Serial.print(DHT.getHumidity(), 1);
-//             Serial.println(" %");
-
-//             Serial.print("Status: ");
-//             switch (status) {
-//                 case DHT20_OK:
-//                     Serial.println("OK");
-//                     break;
-//                 case DHT20_ERROR_CHECKSUM:
-//                     Serial.println("Checksum error");
-//                     break;
-//                 case DHT20_ERROR_CONNECT:
-//                     Serial.println("Connect error");
-//                     break;
-//                 case DHT20_MISSING_BYTES:
-//                     Serial.println("Missing bytes");
-//                     break;
-//                 case DHT20_ERROR_BYTES_ALL_ZERO:
-//                     Serial.println("All bytes read zero");
-//                     break;
-//                 case DHT20_ERROR_READ_TIMEOUT:
-//                     Serial.println("Read time out");
-//                     break;
-//                 case DHT20_ERROR_LASTREAD:
-//                     Serial.println("Read too fast");
-//                     break;
-//                 default:
-//                     Serial.println("Unknown error");
-//                     break;
-//             }
-//             Serial.println();
-//         }
-//         vTaskDelay(2000);  // Delay 2000ms
-//     }
-// }
-
-// void setup() {
-//     Serial.begin(115200);
-//     // Wire.begin(GPIO_NUM_11, GPIO_NUM_12);
-//     Wire.begin();
-
-//     // Initialize DHT20
-//     // if (!DHT.begin()) {
-//     //     Serial.println("Failed to initialize DHT20 sensor!");
-//     //     while (1);
-//     // }
-//     Serial.println("DHT20 sensor initialized.");
-
-//     // Create Tasks
-//     xTaskCreate(Task1, "Task1", 2048, NULL, 2, NULL);
-//     xTaskCreate(Task2, "Task2", 2048, NULL, 2, NULL);
-//     xTaskCreate(Task3, "DHT20Task", 2048, NULL, 2, NULL);
-// }
-
-// void loop() {
-//     // Empty - FreeRTOS handles tasks
-//     Serial.println("Hello guys");
-//     delay(100);
-// }
