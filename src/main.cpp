@@ -13,7 +13,7 @@
 constexpr char WIFI_SSID[] = "Duc Dat";
 constexpr char WIFI_PASSWORD[] = "03012013";
 
-constexpr char TOKEN[] = "48fqddkes9mbys5hgu1g";
+constexpr char TOKEN[] = "o4yluvfd603opjcogx1s";
 
 constexpr char THINGSBOARD_SERVER[] = "app.coreiot.io";
 constexpr uint16_t THINGSBOARD_PORT = 1883U;
@@ -24,19 +24,13 @@ constexpr uint32_t SERIAL_DEBUG_BAUD = 115200U;
 constexpr char BLINKING_INTERVAL_ATTR[] = "blinkingInterval";
 constexpr char LED_MODE_ATTR[] = "ledMode";
 constexpr char LED_STATE_ATTR[] = "ledState";
-constexpr char LED_ON_TIME_ATTR[] = "led_on_time";
-constexpr char LED_OFF_TIME_ATTR[] = "led_off_time";
-
-
-// test parameter no hardware
-float temperature = 20;
-float humidity = 50;
-
-// 
+constexpr char LED_SCHEDULE[] = "Time";
 
 volatile bool attributesChanged = false;
 volatile int ledMode = 0;
 volatile bool ledState = false;
+volatile int ledOnTimeAfter = 0;
+volatile int ledOffTimeAfter = 0;
 
 constexpr uint16_t BLINKING_INTERVAL_MS_MIN = 10U;
 constexpr uint16_t BLINKING_INTERVAL_MS_MAX = 60000U;
@@ -48,11 +42,10 @@ uint32_t previousStateChange;
 constexpr int16_t telemetrySendInterval = 10000U;
 uint32_t previousDataSend;
 
-constexpr std::array<const char *, 4U> SHARED_ATTRIBUTES_LIST = {
+constexpr std::array<const char *, 3U> SHARED_ATTRIBUTES_LIST = {
   LED_STATE_ATTR,
   BLINKING_INTERVAL_ATTR,
-  LED_ON_TIME_ATTR,
-  LED_OFF_TIME_ATTR
+  LED_SCHEDULE
 };
 
 WiFiClient wifiClient;
@@ -75,7 +68,28 @@ const std::array<RPC_Callback, 1U> callbacks = {
   RPC_Callback{ "setLedSwitchValue", setLedSwitchState }
 };
 
+void TaskBlinkingLED(void *pvParameters) {
+  const int maxBlinkCount = 10;
+  int counter = 0;
+  for (;;) {
+    if (counter >= maxBlinkCount) {
+      vTaskDelete(NULL);
+    }
+    digitalWrite(LED_PIN, HIGH);
+    vTaskDelay(blinkingInterval / portTICK_PERIOD_MS); 
+
+    digitalWrite(LED_PIN, LOW);
+    vTaskDelay(blinkingInterval / portTICK_PERIOD_MS); 
+
+    counter++;
+    Serial.print("Blinking count: ");
+    Serial.println(counter);
+  }
+}
+
+
 void processSharedAttributes(const Shared_Attribute_Data &data) {
+  Serial.println("Processing shared attributes");
   for (auto it = data.begin(); it != data.end(); ++it) {
     if (strcmp(it->key().c_str(), BLINKING_INTERVAL_ATTR) == 0) {
       const uint16_t new_interval = it->value().as<uint16_t>();
@@ -83,19 +97,25 @@ void processSharedAttributes(const Shared_Attribute_Data &data) {
         blinkingInterval = new_interval;
         Serial.print("Blinking interval is set to: ");
         Serial.println(new_interval);
+        xTaskCreate(TaskBlinkingLED, "TaskBlinkingLED", 4096, NULL, 2, NULL);
       }
-    } else if (strcmp(it->key().c_str(), LED_STATE_ATTR) == 0) {
+    } 
+    else if (strcmp(it->key().c_str(), LED_STATE_ATTR) == 0) {
       ledState = it->value().as<bool>();
       digitalWrite(LED_PIN, ledState);
       Serial.print("LED state is set to: ");
       Serial.println(ledState);
-    } else if (strcmp(it->key().c_str(), LED_ON_TIME_ATTR) == 0) {
-      Serial.print("LED_ON_TIME_ATTR: ");
-      Serial.println(it->value().as<uint16_t>());
-    } else if (strcmp(it->key().c_str(), LED_OFF_TIME_ATTR) == 0) {
-      Serial.print("LED_OFF_TIME_ATTR: ");
-      Serial.println(it->value().as<uint16_t>());
     }
+    else if (strcmp(it->key().c_str(), LED_SCHEDULE) == 0) {
+      Serial.print("LED_SCHEDULE: ");
+      Serial.println(it->value().as<String>());
+      ledOnTimeAfter  = data["led_on_after"].as<uint16_t>();   
+      ledOffTimeAfter = data["led_off_after"].as<uint16_t>(); 
+      Serial.print("ledOnTimeAfter: ");
+      Serial.println(ledOnTimeAfter);
+      Serial.print("ledOffTimeAfter: ");
+      Serial.println(ledOffTimeAfter);
+    } 
   }
   attributesChanged = true;
 }
@@ -125,6 +145,7 @@ const bool reconnect() {
   InitWiFi();
   return true;
 }
+
 
 void TaskWifiCheck(void *pvParameters)
 {
@@ -179,13 +200,10 @@ void TaskSendTelemetry(void *pvParameters)
 {
   for (;;)
   {
-    // dht20.read();
+    dht20.read();
     
-    // float temperature = dht20.getTemperature();
-    // float humidity = dht20.getHumidity();
-
-    temperature++;
-    humidity++;
+    float temperature = dht20.getTemperature();
+    float humidity = dht20.getHumidity();
 
   
     if (isnan(temperature) || isnan(humidity)) {
@@ -200,7 +218,7 @@ void TaskSendTelemetry(void *pvParameters)
       tb.sendTelemetryData("temperature", temperature);
       tb.sendTelemetryData("humidity", humidity);
     }
-    vTaskDelay(2000 / portTICK_PERIOD_MS);
+    vTaskDelay(5000 / portTICK_PERIOD_MS);
   }
 }
 
@@ -237,11 +255,11 @@ void setup() {
 
   Wire.begin(SDA_PIN, SCL_PIN);
   dht20.begin();
-  xTaskCreate(TaskWifiCheck, "TaskWifiCheck", 2048, NULL, 2, NULL);
-  xTaskCreate(TaskCoreIOTCheck, "TaskCoreIOTCheck", 2048, NULL, 2, NULL);
-  xTaskCreate(TaskSendTelemetry, "TaskSendTelemetry", 2048, NULL, 2, NULL);
-  xTaskCreate(TaskSendAttributes, "TaskSendAttributes", 2048, NULL, 2, NULL);
-  xTaskCreate(TaskTBLoop, "TaskTBLoop", 2048, NULL, 2, NULL);
+  xTaskCreate(TaskWifiCheck, "TaskWifiCheck", 4096, NULL, 2, NULL);
+  xTaskCreate(TaskCoreIOTCheck, "TaskCoreIOTCheck", 4096, NULL, 2, NULL);
+  xTaskCreate(TaskSendTelemetry, "TaskSendTelemetry", 4096, NULL, 2, NULL);
+  xTaskCreate(TaskSendAttributes, "TaskSendAttributes", 4096, NULL, 2, NULL);
+  xTaskCreate(TaskTBLoop, "TaskTBLoop", 4096, NULL, 2, NULL);
   
 }
 
