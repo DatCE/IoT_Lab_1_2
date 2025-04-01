@@ -10,8 +10,8 @@
 #include <ArduinoOTA.h>
 #include "cooperative_scheduler_O(1).h"
 
-constexpr char WIFI_SSID[] = "Duc Dat";
-constexpr char WIFI_PASSWORD[] = "03012013";
+constexpr char WIFI_SSID[] = "Tu1Den9";
+constexpr char WIFI_PASSWORD[] = "xducdatx";
 
 constexpr char TOKEN[] = "o4yluvfd603opjcogx1s";
 
